@@ -5,7 +5,8 @@ requireLogin(['SUPER-ADMIN']);
 require_once __DIR__ . '/db.php';
 
 $pdo = getPDO();
-$mensaje_ok = ''; $mensaje_error = '';
+$mensaje_ok = ''; 
+$mensaje_error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $accion = $_POST['accion'] ?? '';
@@ -17,37 +18,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Subida de imágenes
         $rutas_imagenes = [];
         $directorio = __DIR__ . '/assets/img/';
-        if (!is_dir($directorio)) mkdir($directorio, 0777, true);
-
-        for ($i = 1; $i <= 2; $i++) {
-            $input_name = 'banner_' . $i;
-            if (isset($_FILES[$input_name]) && $_FILES[$input_name]['error'] === UPLOAD_ERR_OK) {
-                $ext = pathinfo($_FILES[$input_name]['name'], PATHINFO_EXTENSION);
-                $nombre_archivo = "dept_{$nombre}_banner{$i}_" . time() . ".$ext";
-                move_uploaded_file($_FILES[$input_name]['tmp_name'], $directorio . $nombre_archivo);
-                $rutas_imagenes[$input_name] = 'assets/img/' . $nombre_archivo;
+        
+        // Intentar crear la carpeta si no existe
+        if (!is_dir($directorio)) {
+            if (!@mkdir($directorio, 0775, true)) {
+                $mensaje_error .= "No se pudo crear la carpeta assets/img/. Permisos denegados.<br>";
             }
         }
 
-        try {
-            if ($accion === 'crear') {
-                $b1 = $rutas_imagenes['banner_1'] ?? 'assets/img/banner_central.jpg';
-                $b2 = $rutas_imagenes['banner_2'] ?? 'assets/img/qr_pago.png';
-                $stmt = $pdo->prepare("INSERT INTO departamentos (nombre, banner_1, banner_2) VALUES (?, ?, ?)");
-                $stmt->execute([$nombre, $b1, $b2]);
-                $mensaje_ok = "Departamento creado exitosamente.";
-            } else {
-                $sql = "UPDATE departamentos SET nombre = ?";
-                $params = [$nombre];
-                if (isset($rutas_imagenes['banner_1'])) { $sql .= ", banner_1 = ?"; $params[] = $rutas_imagenes['banner_1']; }
-                if (isset($rutas_imagenes['banner_2'])) { $sql .= ", banner_2 = ?"; $params[] = $rutas_imagenes['banner_2']; }
-                $sql .= " WHERE id = ?"; $params[] = $id;
+        // Procesar las 2 imágenes
+        for ($i = 1; $i <= 2; $i++) {
+            $input_name = 'banner_' . $i;
+            
+            // Si el usuario envió un archivo
+            if (isset($_FILES[$input_name]) && $_FILES[$input_name]['error'] !== UPLOAD_ERR_NO_FILE) {
                 
-                $pdo->prepare($sql)->execute($params);
-                $mensaje_ok = "Departamento actualizado.";
+                // Verificar si hubo errores en la subida (ej. peso excedido)
+                if ($_FILES[$input_name]['error'] !== UPLOAD_ERR_OK) {
+                    $mensaje_error .= "Error al subir Banner $i (Código: " . $_FILES[$input_name]['error'] . "). El archivo podría ser muy pesado.<br>";
+                    continue; // Saltar a la siguiente foto
+                }
+
+                $ext = strtolower(pathinfo($_FILES[$input_name]['name'], PATHINFO_EXTENSION));
+                $nombre_archivo = "dept_banner{$i}_" . time() . "_" . rand(100, 999) . ".$ext";
+                
+                // Intentar mover el archivo temporal a la carpeta final
+                if (@move_uploaded_file($_FILES[$input_name]['tmp_name'], $directorio . $nombre_archivo)) {
+                    $rutas_imagenes[$input_name] = 'assets/img/' . $nombre_archivo;
+                } else {
+                    $mensaje_error .= "Fallo al guardar el Banner $i en el servidor. La carpeta 'assets/img/' no tiene permisos de escritura.<br>";
+                }
             }
-        } catch (Exception $e) {
-            $mensaje_error = "Error: " . $e->getMessage();
+        }
+
+        // Si no hubo errores fatales, guardamos en la BD
+        if (empty($mensaje_error)) {
+            try {
+                if ($accion === 'crear') {
+                    $b1 = $rutas_imagenes['banner_1'] ?? 'assets/img/banner_central.jpg';
+                    $b2 = $rutas_imagenes['banner_2'] ?? 'assets/img/qr_pago.png';
+                    $stmt = $pdo->prepare("INSERT INTO departamentos (nombre, banner_1, banner_2) VALUES (?, ?, ?)");
+                    $stmt->execute([$nombre, $b1, $b2]);
+                    $mensaje_ok = "Departamento creado exitosamente.";
+                } else {
+                    $sql = "UPDATE departamentos SET nombre = ?";
+                    $params = [$nombre];
+                    if (isset($rutas_imagenes['banner_1'])) { $sql .= ", banner_1 = ?"; $params[] = $rutas_imagenes['banner_1']; }
+                    if (isset($rutas_imagenes['banner_2'])) { $sql .= ", banner_2 = ?"; $params[] = $rutas_imagenes['banner_2']; }
+                    $sql .= " WHERE id = ?"; $params[] = $id;
+                    
+                    $pdo->prepare($sql)->execute($params);
+                    $mensaje_ok = "Departamento actualizado.";
+                }
+            } catch (Exception $e) {
+                $mensaje_error .= "Error de Base de Datos: " . $e->getMessage() . "<br>";
+            }
         }
     }
 }
@@ -72,8 +97,8 @@ $departamentos = $pdo->query("SELECT * FROM departamentos")->fetchAll();
     <a href="index.php">← Volver al Inicio</a>
     <h2>Gestión de Oficinas / Departamentos</h2>
 
-    <?php if ($mensaje_ok): ?><div style="color: green; font-weight: bold;"><?= $mensaje_ok ?></div><?php endif; ?>
-    <?php if ($mensaje_error): ?><div style="color: red; font-weight: bold;"><?= $mensaje_error ?></div><?php endif; ?>
+    <?php if ($mensaje_ok): ?><div style="background: #d1fae5; color: #065f46; padding: 15px; border-radius: 5px; margin-bottom: 20px; font-weight: bold;"><?= $mensaje_ok ?></div><?php endif; ?>
+    <?php if ($mensaje_error): ?><div style="background: #fee2e2; color: #991b1b; padding: 15px; border-radius: 5px; margin-bottom: 20px; font-weight: bold;"><?= $mensaje_error ?></div><?php endif; ?>
 
     <div class="card">
         <h3>Crear / Editar Oficina</h3>
@@ -97,11 +122,15 @@ $departamentos = $pdo->query("SELECT * FROM departamentos")->fetchAll();
     <div class="card">
         <h3>Departamentos Actuales</h3>
         <table>
-            <tr><th>ID</th><th>Nombre</th><th>URL Pantalla</th><th>Acción</th></tr>
+            <tr><th>ID</th><th>Nombre</th><th>Imágenes Actuales</th><th>URL Pantalla</th><th>Acción</th></tr>
             <?php foreach ($departamentos as $d): ?>
             <tr>
                 <td><?= $d['id'] ?></td>
                 <td><?= htmlspecialchars($d['nombre']) ?></td>
+                <td>
+                    <img src="<?= htmlspecialchars($d['banner_1']) ?>" width="50" height="30" style="object-fit: cover;">
+                    <img src="<?= htmlspecialchars($d['banner_2']) ?>" width="50" height="30" style="object-fit: cover;">
+                </td>
                 <td><a href="display.php?dept=<?= $d['id'] ?>" target="_blank">Ver Pantalla</a></td>
                 <td>
                     <button onclick="editar(<?= $d['id'] ?>, '<?= htmlspecialchars($d['nombre'], ENT_QUOTES) ?>')">Editar</button>

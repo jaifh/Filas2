@@ -2,13 +2,92 @@
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 
-$dept_id = (int)($_GET['dept'] ?? 1); // Por defecto carga el 1
 $pdo = getPDO();
+
+// =====================================================================
+// 1. MODO SELECTOR DE PANTALLAS (SI NO HAY DEPARTAMENTO EN LA URL)
+// =====================================================================
+if (!isset($_GET['dept'])) {
+    $departamentos = $pdo->query("SELECT * FROM departamentos ORDER BY nombre ASC")->fetchAll();
+    ?>
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="utf-8">
+        <title>Selector de Pantallas - Municipalidad de Hualqui</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body { 
+                margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; 
+                background: #020617; color: white; 
+                display: flex; flex-direction: column; align-items: center; justify-content: center; 
+                min-height: 100vh; padding: 20px; box-sizing: border-box; 
+            }
+            /* LOGO MUNICIPAL EN EL LOBBY */
+            .logo-lobby { 
+                height: 120px; 
+                width: auto; 
+                margin-bottom: 10px; 
+                object-fit: contain;
+                filter: drop-shadow(0 0 10px rgba(255,255,255,0.2));
+            }
+            h1 { color: #22c55e; font-size: 2.5rem; margin-top: 0; text-transform: uppercase; letter-spacing: 1px; text-align: center; }
+            p { color: #94a3b8; font-size: 1.2rem; margin-bottom: 40px; text-align: center; }
+            
+            .grid-pantallas { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; max-width: 1200px; width: 100%; }
+            
+            .card-pantalla { 
+                background: #0f172a; border: 2px solid #1e293b; padding: 40px 30px; 
+                border-radius: 20px; text-align: center; text-decoration: none; color: white; 
+                flex: 1 1 300px; max-width: 400px; transition: all 0.3s ease; 
+                box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; flex-direction: column; 
+                align-items: center; justify-content: center; 
+            }
+            .card-pantalla:hover { transform: translateY(-10px) scale(1.02); border-color: #22c55e; box-shadow: 0 15px 40px rgba(34, 197, 94, 0.2); background: #13203b; }
+            
+            .icon-tv { font-size: 4rem; margin-bottom: 15px; display: block; }
+            .card-pantalla h2 { margin: 0; font-size: 1.8rem; color: #f8fafc; }
+            .card-pantalla .prefijos { margin-top: 15px; background: rgba(0,0,0,0.3); padding: 8px 15px; border-radius: 10px; font-size: 0.9rem; color: #cbd5e1; }
+        </style>
+    </head>
+    <body>
+        <img src="assets/img/logo.png" alt="Municipalidad de Hualqui" class="logo-lobby">
+        <h1>Gestor de Pantallas</h1>
+        <p>Seleccione el departamento que desea visualizar en este monitor</p>
+        
+        <div class="grid-pantallas">
+            <?php foreach ($departamentos as $d): ?>
+                <a href="?dept=<?= $d['id'] ?>" class="card-pantalla">
+                    <span class="icon-tv">🖥️</span>
+                    <h2><?= htmlspecialchars($d['nombre']) ?></h2>
+                    <div class="prefijos">
+                        Gen: <strong><?= $d['prefijo_cola'] ?></strong> | Pref: <strong><?= $d['prefijo_preferencial'] ?></strong>
+                    </div>
+                </a>
+            <?php endforeach; ?>
+            
+            <?php if (empty($departamentos)): ?>
+                <h3 style="color: #ef4444;">No hay departamentos creados en el sistema.</h3>
+            <?php endif; ?>
+        </div>
+    </body>
+    </html>
+    <?php
+    exit;
+}
+
+// =====================================================================
+// 2. MODO PANTALLA DE LLAMADOS (SI HAY DEPARTAMENTO EN LA URL)
+// =====================================================================
+$dept_id = (int)$_GET['dept'];
 $stmt = $pdo->prepare("SELECT * FROM departamentos WHERE id = ?");
 $stmt->execute([$dept_id]);
 $dept = $stmt->fetch();
 
-if (!$dept) die("Departamento no encontrado.");
+if (!$dept) {
+    header("Location: display.php");
+    exit;
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -17,22 +96,51 @@ if (!$dept) die("Departamento no encontrado.");
     <title>Pantalla de llamados - <?= htmlspecialchars($dept['nombre']) ?></title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        /* ... TUS ESTILOS CSS ORIGINALES SE MANTIENEN HASTA AQUÍ ... */
         :root { --bg-dark: #020617; --panel-bg: #0f172a; --primary-green: #22c55e; --secondary-green: #16a34a; --accent-color: #facc15; }
         * { box-sizing: border-box; }
         body { margin: 0; font-family: sans-serif; background: var(--bg-dark); color: #ffffff; overflow: hidden; height: 100vh; }
-        .layout { display: grid; grid-template-columns: 28% 42% 30%; grid-template-rows: 90px 1fr; grid-template-areas: "header header header" "col-left col-center col-right"; height: 100vh; gap: 12px; padding: 0 10px 10px 10px; }
-        header { grid-area: header; padding: 0 2rem; background: var(--secondary-green); display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
-        header h1 { margin: 0; font-size: 1.8rem; font-weight: 800; text-transform: uppercase; }
+        
+        /* DISEÑO RESPONSIVO: PANTALLA DIVIDIDA */
+        .layout { 
+            display: grid; 
+            grid-template-columns: 28% 42% 30%; 
+            grid-template-rows: 90px 1fr; 
+            grid-template-areas: "header header header" "col-left col-center col-right"; 
+            height: 100vh; 
+            gap: 12px; 
+            padding: 0 10px 10px 10px; 
+        }
+
+        /* AJUSTES HEADER PARA ACOMODAR EL LOGO Y TEXTO */
+        header { 
+            grid-area: header; 
+            padding: 0 1.5rem; 
+            background: var(--secondary-green); 
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between; 
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4); 
+            border-radius: 0 0 15px 15px; /* Bordes redondeados sutiles */
+        }
+        
+        .header-left { display: flex; align-items: center; gap: 1rem; }
+        .header-logo { height: 70px; width: auto; object-fit: contain; background: white; padding: 5px; border-radius: 8px;} /* Logo con fondo blanco para que resalte */
+        
+        .header-titulos { display: flex; flex-direction: column; justify-content: center; }
+        .header-titulos h1 { margin: 0; font-size: 1.6rem; font-weight: 900; text-transform: uppercase; line-height: 1; }
+        .header-titulos span { font-size: 1rem; font-weight: bold; color: #d1fae5; }
+        
+        .btn-volver { background: rgba(0,0,0,0.3); color: white; text-decoration: none; padding: 8px 15px; border-radius: 8px; font-size: 1.2rem; font-weight: bold; border: 1px solid rgba(255,255,255,0.2); transition: 0.2s; display: flex; align-items: center; justify-content: center; height: 45px;}
+        .btn-volver:hover { background: rgba(0,0,0,0.6); }
+
         .hora-actual { font-size: 2.2rem; font-family: monospace; font-weight: bold; background: rgba(0,0,0,0.2); padding: 5px 20px; border-radius: 10px; }
         
-        /* Modificación para 2 fotos en la derecha */
-        .col-right { grid-area: col-right; padding: 10px; display: flex; flex-direction: column; gap: 15px; }
-        .banner-container { flex: 1; background: #000; border-radius: 20px; overflow: hidden; border: 3px solid #334155; }
-        .banner-container img { width: 100%; height: 100%; object-fit: cover; }
+        /* COLUMNAS */
+        .col-right { grid-area: col-right; padding: 10px 0 10px 10px; display: flex; flex-direction: column; gap: 15px; min-height: 0; }
+        .banner-container { flex: 1; background: #000; border-radius: 20px; overflow: hidden; border: 3px solid #334155; min-height: 0; display: flex; align-items: center; justify-content: center; position: relative; }
+        .banner-container img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
         
-        /* RESTO DE ESTILOS DE TICKET/ANIMACIONES IGUAL */
-        .col-left { grid-area: col-left; padding: 5px; display: flex; flex-direction: column; gap: 5px; background: rgba(15, 23, 42, 0.5); border-radius: 0 0 20px 20px; }
+        .col-left { grid-area: col-left; padding: 5px; display: flex; flex-direction: column; gap: 5px; background: rgba(15, 23, 42, 0.5); border-radius: 0 0 20px 20px; min-height: 0; }
         .historial-titulo { text-align: center; padding: 8px; background: var(--secondary-green); border-radius: 8px; font-weight: bold; font-size: 0.9rem; margin-bottom: 2px; }
         .ticket-card { display: grid; grid-template-columns: 60% 40%; background: var(--panel-bg); border-radius: 10px; border: 2px solid #1e293b; flex: 1; min-height: 0; }
         .ticket-col-num { background: #fff; color: var(--bg-dark); display: flex; flex-direction: column; align-items: center; justify-content: center; }
@@ -40,14 +148,18 @@ if (!$dept) die("Departamento no encontrado.");
         .ticket-numero { font-size: 1.7rem; font-weight: 900; line-height: 1; }
         .ticket-col-mod { background: var(--secondary-green); display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; }
         .ticket-modulo-val { font-size: 1.6rem; font-weight: 900; line-height: 1; }
-        .col-center { grid-area: col-center; padding: 10px; display: flex; flex-direction: column; }
-        .panel-turno { flex: 1; background: linear-gradient(145deg, #16a34a, #15803d); border-radius: 30px; display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: inset 0 0 50px rgba(0,0,0,0.2), 0 20px 50px rgba(0,0,0,0.5); border: 5px solid rgba(255,255,255,0.2); transition: all 0.3s ease; }
+        
+        .col-center { grid-area: col-center; padding: 10px; display: flex; flex-direction: column; min-height: 0; }
+        .panel-turno { flex: 1; background: linear-gradient(145deg, #16a34a, #15803d); border-radius: 30px; display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: inset 0 0 50px rgba(0,0,0,0.2), 0 20px 50px rgba(0,0,0,0.5); border: 5px solid rgba(255,255,255,0.2); transition: all 0.3s ease; min-height: 0; }
         .panel-turno-label { font-size: 3.5rem; font-weight: 900; color: var(--accent-color); margin-bottom: 10px; }
-        .panel-turno-numero { font-size: 8rem; font-weight: 900; background: #000; color: var(--primary-green); padding: 15px 60px; border-radius: 40px; border: 8px solid #fff; }
-        .panel-turno-modulo-num { font-size: 5.5rem; font-weight: 900; color: var(--accent-color); }
+        .panel-turno-numero { font-size: 8vw; font-weight: 900; background: #000; color: var(--primary-green); padding: 15px 40px; border-radius: 40px; border: 8px solid #fff; white-space: nowrap; }
+        .panel-turno-modulo-num { font-size: 6vw; font-weight: 900; color: var(--accent-color); }
+        
+        /* ANIMACIONES */
         .llamado-activo { animation: pulse-active 1s infinite alternate; }
         @keyframes pulse-active { from { transform: scale(1); box-shadow: 0 0 40px rgba(34, 197, 94, 0.5); } to { transform: scale(1.05); box-shadow: 0 0 80px rgba(250, 204, 21, 0.8); } }
-        #btn-audio { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; padding: 12px 25px; background: var(--accent-color); border: none; border-radius: 50px; font-weight: bold; cursor: pointer; }
+        
+        #btn-audio { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; padding: 12px 25px; background: var(--accent-color); border: none; border-radius: 50px; font-weight: bold; cursor: pointer; color: black; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
     </style>
 </head>
 <body>
@@ -57,10 +169,12 @@ if (!$dept) die("Departamento no encontrado.");
 
 <div class="layout">
     <header>
-        <div style="display: flex; align-items: center; gap: 1.5rem;">
-            <div>
-                <h1>Municipalidad</h1>
-                <span style="font-size: 1rem; font-weight: bold;"><?= htmlspecialchars($dept['nombre']) ?></span>
+        <div class="header-left">
+            <a href="display.php" class="btn-volver" title="Volver al menú de pantallas">⬅</a>
+            <img src="assets/img/logo.png" alt="Logo Hualqui" class="header-logo">
+            <div class="header-titulos">
+                <h1>MUNICIPALIDAD DE HUALQUI</h1>
+                <span><?= htmlspecialchars($dept['nombre']) ?></span>
             </div>
         </div>
         <div class="hora-actual" id="hora-actual">00:00:00</div>
@@ -127,7 +241,6 @@ function anunciarLlamado(numero, modulo) {
 
 async function cargarDisplay() {
     try {
-        // PASAMOS EL DEPT_ID a la API
         const resp = await fetch('display_api.php?dept=<?= $dept_id ?>', { cache: 'no-store' });
         const data = await resp.json();
 
