@@ -1,7 +1,7 @@
 <?php
 // dashboard_calendario.php
 require_once __DIR__ . '/auth.php';
-requireAdmin();
+requireLogin(['ADMIN']);
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/config.php'; // asegúrate que aquí tengas timezone America/Santiago
 

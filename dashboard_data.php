@@ -1,7 +1,7 @@
 <?php
 // dashboard_data.php
 require_once __DIR__ . '/auth.php';
-requireAdmin();
+requireLogin(['ADMIN']);
 require_once __DIR__ . '/db.php';
 
 header('Content-Type: application/json; charset=utf-8');

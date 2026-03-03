@@ -1,7 +1,7 @@
 <?php
 // dashboard.php
 require_once __DIR__ . '/auth.php';
-requireAdmin();
+requireLogin(['ADMIN']);
 require_once __DIR__ . '/config.php';
 ?>
 <!DOCTYPE html>

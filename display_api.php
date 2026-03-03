@@ -8,21 +8,17 @@ try {
     $hoy = date('Y-m-d');
 
     // Agregamos 'FINALIZADO' para que el historial no se vacíe
+   $dept_id = (int)($_GET['dept'] ?? 1);
+    
     $stmt = $pdo->prepare("
-        SELECT 
-            t.prefijo,
-            t.numero,
-            t.estado,
-            t.hora_llamado,
-            m.nombre AS modulo
+        SELECT t.id, t.prefijo, t.numero, t.estado, t.hora_llamado, m.nombre AS modulo
         FROM tickets t
         LEFT JOIN modulos m ON t.modulo_id = m.id
-        WHERE t.fecha = ?
-          AND t.estado IN ('LLAMADO','ATENDIENDO','FINALIZADO') 
+        WHERE t.fecha = ? AND t.departamento_id = ? AND t.estado IN ('LLAMADO','ATENDIENDO','FINALIZADO') 
         ORDER BY t.hora_llamado DESC, t.id DESC
         LIMIT 15
     ");
-    $stmt->execute([$hoy]);
+    $stmt->execute([$hoy, $dept_id]);
     $tickets = $stmt->fetchAll();
 
     echo json_encode(['tickets' => $tickets]);

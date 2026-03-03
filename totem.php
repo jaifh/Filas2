@@ -1,73 +1,132 @@
 <?php
-require_once __DIR__ . '/db.php';
-
-$pdo = getPDO();
-
-// obtener prefijo
-$stmt = $pdo->prepare('SELECT prefijo_cola FROM configuracion WHERE id = 1');
-$stmt->execute();
-$config = $stmt->fetch();
-if (!$config) {
-    die('No hay configuración de prefijo (tabla configuracion).');
-}
-
-$prefijo = $config['prefijo_cola'];
-$hoy     = date('Y-m-d');
-$ahora   = date('H:i:s');
-
-$pdo->beginTransaction();
-try {
-    // último número del día
-    $stmt = $pdo->prepare('
-        SELECT COALESCE(MAX(numero), 0) AS max_num
-        FROM tickets
-        WHERE fecha = ?
-        FOR UPDATE
-    ');
-    $stmt->execute([$hoy]);
-    $row = $stmt->fetch();
-    $nuevo_numero = (int)$row['max_num'] + 1;
-
-    // insertar ticket en espera
-    $stmt = $pdo->prepare('
-        INSERT INTO tickets (numero, prefijo, fecha, hora_creacion, estado)
-        VALUES (?, ?, ?, ?, "ESPERA")
-    ');
-    $stmt->execute([$nuevo_numero, $prefijo, $hoy, $ahora]);
-
-    $pdo->commit();
-} catch (Throwable $e) {
-    if ($pdo->inTransaction()) {
-        $pdo->rollBack();
-    }
-    die('Error al generar número: ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8'));
-}
-
-$codigo_mostrar = $prefijo . '-' . str_pad((string)$nuevo_numero, 3, '0', STR_PAD_LEFT);
+// totem.php
+require_once __DIR__ . '/config.php';
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="utf-8">
-<title>Tótem Permisos de Circulación</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>
-    body { margin:0; font-family:sans-serif; text-align:center; background:#003366; color:#fff; }
-    .contenedor { padding:2rem; }
-    h1 { font-size:3rem; margin-bottom:1rem; }
-    .numero { font-size:6rem; margin:2rem 0; font-weight:bold; }
-    .btn { margin-top:1rem; padding:0.7rem 1.5rem; font-size:1.1rem; border-radius:999px; border:none; background:#0055aa; color:#fff; cursor:pointer; }
-</style>
+    <meta charset="utf-8">
+    <title>Obtener Ticket - Municipalidad</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #020617;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+        .header { text-align: center; margin-bottom: 40px; }
+        .header h1 { font-size: 3rem; margin: 0; color: #22c55e; }
+        .header p { font-size: 1.5rem; color: #cbd5e1; margin: 5px 0; }
+        
+        .botones-container {
+            display: flex;
+            gap: 30px;
+            width: 80%;
+            max-width: 1000px;
+        }
+        .btn-totem {
+            flex: 1;
+            padding: 60px 20px;
+            border-radius: 20px;
+            border: none;
+            font-size: 2.5rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.1s, box-shadow 0.1s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+        .btn-totem:active { transform: scale(0.95); }
+        
+        .btn-normal {
+            background: linear-gradient(145deg, #2563eb, #1d4ed8);
+            color: white;
+            box-shadow: 0 10px 30px rgba(37, 99, 235, 0.4);
+        }
+        .btn-preferencial {
+            background: linear-gradient(145deg, #eab308, #ca8a04);
+            color: #1e293b;
+            box-shadow: 0 10px 30px rgba(234, 179, 8, 0.4);
+        }
+        
+        .modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); justify-content: center; align-items: center; z-index: 1000;
+        }
+        .ticket-print {
+            background: white; color: black; padding: 40px; border-radius: 10px;
+            text-align: center; width: 400px;
+        }
+        .ticket-print h2 { margin: 0; font-size: 1.5rem; }
+        .ticket-num { font-size: 6rem; font-weight: 900; margin: 20px 0; border: 4px solid black; }
+    </style>
 </head>
 <body>
-<div class="contenedor">
-    <h1>Permisos de Circulación</h1>
-    <p>Su número es:</p>
-    <div class="numero"><?= htmlspecialchars($codigo_mostrar, ENT_QUOTES, 'UTF-8') ?></div>
-    <p>Espere a ser llamado en la pantalla.</p>
-    <form method="post">
-        <button type="submit" class="btn">Tomar otro número</button>
-    </form>
-</div>
+
+    <div class="header">
+        <h1>Permisos de Circulación</h1>
+        <p>Toque la pantalla para obtener su número</p>
+    </div>
+
+    <div class="botones-container">
+        <button class="btn-totem btn-normal" onclick="solicitarTicket('NORMAL')">
+            <span style="font-size: 4rem;">🧑‍💼</span>
+            ATENCIÓN GENERAL
+        </button>
+
+        <button class="btn-totem btn-preferencial" onclick="solicitarTicket('PREFERENCIAL')">
+            <span style="font-size: 4rem;">🦽🤰</span>
+            ATENCIÓN PREFERENCIAL
+        </button>
+    </div>
+
+    <div class="modal" id="modal-impresion">
+        <div class="ticket-print">
+            <h2>MUNICIPALIDAD</h2>
+            <p id="lbl-tipo">Permisos de Circulación</p>
+            <div class="ticket-num" id="lbl-numero">--</div>
+            <p>Por favor, espere a ser llamado en pantalla.</p>
+            <p style="font-size: 0.8rem; color: #666;">Retire su comprobante</p>
+        </div>
+    </div>
+
+    <script>
+        async function solicitarTicket(tipo) {
+            try {
+                const res = await fetch('totem_api.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tipo: tipo })
+                });
+                
+                const data = await res.json();
+                if(data.success) {
+                    document.getElementById('lbl-numero').innerText = data.codigo;
+                    document.getElementById('lbl-tipo').innerText = tipo === 'PREFERENCIAL' ? 'Atención Preferencial' : 'Atención General';
+                    
+                    // Mostrar modal
+                    const modal = document.getElementById('modal-impresion');
+                    modal.style.display = 'flex';
+                    
+                    // Ocultar modal después de 4 segundos (y simular impresión)
+                    setTimeout(() => {
+                        modal.style.display = 'none';
+                    }, 4000);
+                } else {
+                    alert('Error al generar ticket: ' + data.message);
+                }
+            } catch(e) {
+                alert('Error de conexión con el sistema.');
+            }
+        }
+    </script>
 </body>
 </html>
