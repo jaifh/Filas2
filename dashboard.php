@@ -42,18 +42,18 @@ require_once __DIR__ . '/config.php';
     }
 
     /* Header mejorado */
-    header {
-        padding:1rem 1.8rem;
-        background:linear-gradient(135deg,rgb(2, 71, 23) 0%,rgb(5, 170, 68) 100%);
-        color:#fff;
-        display:flex;
-        justify-content:space-between;
-        align-items:center;
-        box-shadow:var(--shadow-lg);
-        position:sticky;
-        top:0;
-        z-index:100;
-    }
+header {
+    padding:1rem 1.8rem;
+    background:linear-gradient(135deg,rgb(2, 71, 23) 0%,rgb(5, 170, 68) 100%);
+    color:#fff;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    box-shadow:var(--shadow-lg);
+    position:sticky;
+    top:0;
+    z-index:100;
+}
 
     header h1 { 
         margin:0; 
